@@ -1,0 +1,10 @@
+[project]
+name = "mc714"
+version = "0.1.0"
+description = "Cluster distribuído MC714 — Lamport, Ricart-Agrawala e Bully"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv]
+package = false
