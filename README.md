@@ -1,4 +1,4 @@
-# MC714 — Sistemas Distribuídos
+# MC714 (Sistemas Distribuídos) - Trabalho 2
 
 ## Alunos
 
