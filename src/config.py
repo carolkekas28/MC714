@@ -24,7 +24,7 @@ class NodeConfig:
 def load_config() -> NodeConfig:
     node_id = int(os.environ["NODE_ID"])
     node_count = int(os.environ.get("NODE_COUNT", "4"))
-    base_port = int(os.environ.get("BASE_PORT", "5000"))
+    base_port = int(os.environ.get("BASE_PORT", "8000"))
 
     peers: dict[int, tuple[str, int]] = {}
     for index, entry in enumerate(os.environ["PEERS"].split(",")):

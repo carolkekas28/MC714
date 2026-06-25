@@ -1,5 +1,14 @@
 # MC714 — Sistemas Distribuídos
 
+## Alunos
+
+
+| Aluno | RA | 
+| -------- | -------- | 
+| Ana Carolina de Almeida Cardoso | 246914  | 
+| Pedro Damasceno Vasconcellos | 260640  | 
+
+
 Cluster distribuído em Python com troca real de mensagens TCP, implementando:
 
 - **Relógio lógico de Lamport**
@@ -8,8 +17,18 @@ Cluster distribuído em Python com troca real de mensagens TCP, implementando:
 
 ## Requisitos
 
-- [Docker](https://docs.docker.com/get-docker/) e Docker Compose
-- [uv](https://docs.astral.sh/uv/) (opcional, para desenvolvimento local)
+- [uv](https://docs.astral.sh/uv/) — desenvolvimento e execução local
+- [Docker Desktop](https://docs.docker.com/get-docker/) — recomendado para a demonstração final (cluster em contêineres)
+
+### Instalar Docker no macOS (Apple Silicon)
+
+Se `docker` retornar `command not found`, instale o Docker Desktop:
+
+```bash
+brew install --cask docker
+```
+
+Depois abra o app **Docker** em `/Applications/Docker.app` e aguarde o ícone da baleia ficar estável na barra de menu. Só então rode `docker compose up --build`.
 
 ## Estrutura do projeto
 
@@ -46,12 +65,33 @@ docker compose down
 
 ## Desenvolvimento local (sem Docker)
 
-Criar ambiente e rodar um nó manualmente:
+Útil enquanto o Docker não está instalado ou para depuração rápida.
+
+Subir os 4 nós de uma vez:
 
 ```bash
 uv sync
-NODE_ID=0 NODE_COUNT=4 BASE_PORT=5000 \
-  PEERS="localhost:5000,localhost:5001,localhost:5002,localhost:5003" \
+chmod +x scripts/run_local_cluster.sh
+./scripts/run_local_cluster.sh
+```
+
+Ver logs agregados:
+
+```bash
+./scripts/run_local_cluster.sh logs
+```
+
+Parar todos os nós:
+
+```bash
+./scripts/run_local_cluster.sh stop
+```
+
+Rodar um único nó manualmente:
+
+```bash
+NODE_ID=0 NODE_COUNT=4 BASE_PORT=8000 \
+  PEERS="localhost:8000,localhost:8001,localhost:8002,localhost:8003" \
   uv run python src/main.py
 ```
 
@@ -59,10 +99,12 @@ NODE_ID=0 NODE_COUNT=4 BASE_PORT=5000 \
 
 | Nó    | Hostname (Docker) | Porta TCP |
 |-------|-------------------|-----------|
-| node0 | node0             | 5000      |
-| node1 | node1             | 5001      |
-| node2 | node2             | 5002      |
-| node3 | node3             | 5003      |
+| node0 | node0             | 8000      |
+| node1 | node1             | 8001      |
+| node2 | node2             | 8002      |
+| node3 | node3             | 8003      |
+
+> **Nota (macOS):** a porta 5000 costuma ser usada pelo AirPlay Receiver. Por isso o cluster usa a faixa **8000–8003**.
 
 Conexões em malha completa: o nó de menor ID inicia conexão com IDs maiores (implementado no passo de transporte).
 
