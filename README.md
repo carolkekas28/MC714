@@ -122,6 +122,37 @@ Para rodar só eleição (sem demo de mutex):
 
 ```bash
 RUN_MUTEX_DEMO=false docker compose up --build
+# ou
+DEMO_MODE=none docker compose up --build
+```
+
+### Modos de demonstração (`DEMO_MODE`)
+
+| Valor | Comportamento |
+|-------|----------------|
+| `mutex` (padrão) | Demo automática Ricart-Agrawala |
+| `lamport` | Demo automática de eventos Lamport |
+| `none` | Sem demo automática; Bully sempre ativo |
+
+### CLI e comandos remotos
+
+Com um nó em foreground (terminal interativo):
+
+```
+status
+event 2
+request-cs
+help
+quit
+```
+
+Com cluster em background (Docker ou `run_local_cluster.sh`), use:
+
+```bash
+chmod +x scripts/command.sh
+./scripts/command.sh node0 status
+./scripts/command.sh node1 request-cs
+./scripts/command.sh node2 event 3
 ```
 
 ## Status da implementação
@@ -130,4 +161,4 @@ RUN_MUTEX_DEMO=false docker compose up --build
 - [x] Camada de transporte TCP e relógio de Lamport
 - [x] Ricart-Agrawala
 - [x] Bully
-- [ ] Integração e scripts de demo
+- [x] Integração e scripts de demo

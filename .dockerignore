@@ -1,0 +1,11 @@
+.git
+.gitignore
+.cursor
+__pycache__
+*.pyc
+.pytest_cache
+.venv
+report/
+instructions.md
+*.md
+!README.md
