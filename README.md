@@ -2,12 +2,12 @@
 
 ## Alunos
 
-
 | Aluno | RA | 
 | -------- | -------- | 
 | Ana Carolina de Almeida Cardoso | 246914  | 
 | Pedro Damasceno Vasconcellos | 260640  | 
 
+## Objetivo
 
 Cluster distribuído em Python com troca real de mensagens TCP, implementando:
 
