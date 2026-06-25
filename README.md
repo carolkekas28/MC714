@@ -103,7 +103,7 @@ O volume `shared_data` é montado em `/app/shared` para o log da seção crític
 ## Status da implementação
 
 - [x] Estrutura do projeto, Docker e Compose
-- [ ] Camada de transporte TCP e relógio de Lamport
+- [x] Camada de transporte TCP e relógio de Lamport
 - [ ] Ricart-Agrawala
 - [ ] Bully
 - [ ] Integração e scripts de demo
