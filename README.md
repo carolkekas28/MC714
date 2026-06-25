@@ -100,10 +100,20 @@ Conexões em malha completa: o nó de menor ID inicia conexão com IDs maiores (
 
 O volume `shared_data` é montado em `/app/shared` para o log da seção crítica (Ricart-Agrawala).
 
+### Demo de exclusão mútua (Ricart-Agrawala)
+
+```bash
+chmod +x scripts/demo_mutex.sh
+./scripts/demo_mutex.sh local 45    # cluster local
+./scripts/demo_mutex.sh docker 45   # via Docker
+```
+
+O log compartilhado da seção crítica fica em `shared/critical.log` (volume `/app/shared` no Docker).
+
 ## Status da implementação
 
 - [x] Estrutura do projeto, Docker e Compose
 - [x] Camada de transporte TCP e relógio de Lamport
-- [ ] Ricart-Agrawala
+- [x] Ricart-Agrawala
 - [ ] Bully
 - [ ] Integração e scripts de demo
