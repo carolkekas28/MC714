@@ -155,6 +155,20 @@ chmod +x scripts/command.sh
 ./scripts/command.sh node2 event 3
 ```
 
+## Testes
+
+Instalar dependências de desenvolvimento e rodar a suíte:
+
+```bash
+uv sync --extra dev
+uv run pytest -v
+```
+
+A suíte inclui:
+
+- **Unitários:** relógio de Lamport, serialização de mensagens, regras de Ricart-Agrawala e Bully
+- **Integração leve:** troca de eventos Lamport entre 3 nós, serialização da seção crítica e anúncio de coordenador
+
 ## Status da implementação
 
 - [x] Estrutura do projeto, Docker e Compose
@@ -162,3 +176,4 @@ chmod +x scripts/command.sh
 - [x] Ricart-Agrawala
 - [x] Bully
 - [x] Integração e scripts de demo
+- [x] Testes unitários e de integração (`tests/`)

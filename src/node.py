@@ -33,7 +33,7 @@ class Node:
         self.bully = BullyElection(config, self.transport)
         self._tasks: list[asyncio.Task[None]] = []
 
-    async def start(self) -> None:
+    async def start(self, *, with_bully: bool = True) -> None:
         logger.info(
             "Starting node %d/%d on %s:%d",
             self.config.node_id,
@@ -42,7 +42,8 @@ class Node:
             self.config.listen_port,
         )
         await self.transport.start()
-        await self.bully.start()
+        if with_bully:
+            await self.bully.start()
 
     async def stop(self) -> None:
         for task in self._tasks:
