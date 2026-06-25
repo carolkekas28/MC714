@@ -110,10 +110,24 @@ chmod +x scripts/demo_mutex.sh
 
 O log compartilhado da seção crítica fica em `shared/critical.log` (volume `/app/shared` no Docker).
 
+### Demo de eleição de líder (Bully)
+
+```bash
+chmod +x scripts/demo_election.sh
+./scripts/demo_election.sh docker    # para o líder (node3) e observa reeleição
+./scripts/demo_election.sh local     # equivalente com processos locais
+```
+
+Para rodar só eleição (sem demo de mutex):
+
+```bash
+RUN_MUTEX_DEMO=false docker compose up --build
+```
+
 ## Status da implementação
 
 - [x] Estrutura do projeto, Docker e Compose
 - [x] Camada de transporte TCP e relógio de Lamport
 - [x] Ricart-Agrawala
-- [ ] Bully
+- [x] Bully
 - [ ] Integração e scripts de demo

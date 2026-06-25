@@ -10,6 +10,7 @@ services:
       BASE_PORT: "8000"
       PEERS: "node0:8000,node1:8001,node2:8002,node3:8003"
       CRITICAL_LOG_PATH: "/app/shared/critical.log"
+      RUN_MUTEX_DEMO: "${RUN_MUTEX_DEMO:-true}"
     ports:
       - "8000:8000"
     volumes:
@@ -34,6 +35,7 @@ services:
       BASE_PORT: "8000"
       PEERS: "node0:8000,node1:8001,node2:8002,node3:8003"
       CRITICAL_LOG_PATH: "/app/shared/critical.log"
+      RUN_MUTEX_DEMO: "${RUN_MUTEX_DEMO:-true}"
     ports:
       - "8001:8001"
     volumes:
@@ -61,6 +63,7 @@ services:
       BASE_PORT: "8000"
       PEERS: "node0:8000,node1:8001,node2:8002,node3:8003"
       CRITICAL_LOG_PATH: "/app/shared/critical.log"
+      RUN_MUTEX_DEMO: "${RUN_MUTEX_DEMO:-true}"
     ports:
       - "8002:8002"
     volumes:
@@ -88,6 +91,7 @@ services:
       BASE_PORT: "8000"
       PEERS: "node0:8000,node1:8001,node2:8002,node3:8003"
       CRITICAL_LOG_PATH: "/app/shared/critical.log"
+      RUN_MUTEX_DEMO: "${RUN_MUTEX_DEMO:-true}"
     ports:
       - "8003:8003"
     volumes:

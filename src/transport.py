@@ -105,13 +105,18 @@ class MessageTransport:
     async def broadcast(self, message: Message) -> None:
         message.lamport_ts = self.clock.on_send()
         message.sender = self.config.node_id
+        delivered: list[int] = []
         for peer_id in self.peer_ids():
-            await self._write(peer_id, message)
+            try:
+                await self._write(peer_id, message)
+                delivered.append(peer_id)
+            except ConnectionError:
+                logger.warning("Broadcast skipped unreachable node%d", peer_id)
         logger.info(
             "BROADCAST %s ts=%d to %s",
             message.type.value,
             message.lamport_ts,
-            self.peer_ids(),
+            delivered,
         )
 
     async def _write(self, peer_id: int, message: Message) -> None:

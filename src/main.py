@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 
+from bully import BullyElection
 from config import load_config
 from lamport import LamportClock
 from messages import Message, MessageType
@@ -55,6 +56,7 @@ async def run_node() -> None:
     critical_log_path = os.environ.get(
         "CRITICAL_LOG_PATH", "shared/critical.log"
     )
+    run_mutex_demo = os.environ.get("RUN_MUTEX_DEMO", "true").lower() == "true"
 
     logger.info(
         "Starting node %d/%d on %s:%d",
@@ -66,10 +68,22 @@ async def run_node() -> None:
 
     clock = LamportClock()
     mutex: RicartAgrawala | None = None
+    bully: BullyElection | None = None
 
     async def handle_message(message: Message) -> None:
         if message.type == MessageType.HELLO:
             return
+
+        if bully is not None:
+            if message.type == MessageType.ELECTION:
+                await bully.handle_election(message)
+            elif message.type == MessageType.OK:
+                await bully.handle_ok(message)
+            elif message.type == MessageType.COORDINATOR:
+                await bully.handle_coordinator(message)
+            elif message.type == MessageType.HEARTBEAT:
+                await bully.handle_heartbeat(message)
+
         if mutex is None:
             return
         if message.type == MessageType.REQUEST:
@@ -79,17 +93,29 @@ async def run_node() -> None:
 
     transport = MessageTransport(config, clock, handle_message)
     mutex = RicartAgrawala(config, transport, clock, critical_log_path)
+    bully = BullyElection(config, transport)
     await transport.start()
+    await bully.start()
 
-    demo_task = asyncio.create_task(
-        mutex_demo_loop(mutex, transport, logger),
-        name="mutex-demo",
-    )
+    tasks: list[asyncio.Task[None]] = []
+    if run_mutex_demo:
+        tasks.append(
+            asyncio.create_task(
+                mutex_demo_loop(mutex, transport, logger),
+                name="mutex-demo",
+            )
+        )
 
     try:
-        await demo_task
+        if tasks:
+            await asyncio.gather(*tasks)
+        else:
+            while True:
+                await asyncio.sleep(3600)
     except asyncio.CancelledError:
-        demo_task.cancel()
+        for task in tasks:
+            task.cancel()
+        await bully.stop()
         await transport.stop()
 
 
