@@ -39,23 +39,23 @@ Quatro nós rodam em containers Docker separados e se comunicam via **sockets TC
 
 ```
 ┌────────────────────────── Máquina hospedeira ──────────────────────────┐
-│                                                                         │
+│                                                                        │
 │  ./shared/                    ┌─── Docker Compose ───────────────────┐ │
 │  ├── critical.log  ◄──────────┤  (volume: pasta espelhada nos 4 nós) │ │
-│  └── commands/     ──────────►│                                       │ │
-│                               │  ┌─────────┐     ┌─────────┐        │ │
-│                               │  │  node0  │─────│  node1  │        │ │
-│                               │  │  :8000  │╲   ╱│  :8001  │        │ │
-│                               │  └─────────┘ ╲ ╱ └─────────┘        │ │
-│                               │               ╳                       │ │
-│                               │  ┌─────────┐ ╱ ╲ ┌─────────┐        │ │
-│                               │  │  node2  │╱   ╲│  node3  │        │ │
-│                               │  │  :8002  │─────│  :8003  │        │ │
-│                               │  └─────────┘     └─────────┘        │ │
-│                               │                                       │ │
-│                               │  Todos os pares conectados via TCP    │ │
-│                               └───────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────┘
+│  └── commands/     ──────────►│                                      │ │
+│                               │  ┌─────────┐     ┌─────────┐         │ │
+│                               │  │  node0  │─────│  node1  │         │ │
+│                               │  │  :8000  │╲   ╱│  :8001  │         │ │
+│                               │  └─────────┘ ╲ ╱ └─────────┘         │ │
+│                               │               ╳                      │ │
+│                               │  ┌─────────┐ ╱ ╲ ┌─────────┐         │ │
+│                               │  │  node2  │╱   ╲│  node3  │         │ │
+│                               │  │  :8002  │─────│  :8003  │         │ │
+│                               │  └─────────┘     └─────────┘         │ │
+│                               │                                      │ │
+│                               │  Todos os pares conectados via TCP   │ │
+│                               └──────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 Cada linha entre nós é **uma conexão TCP bidirecional**. O nó de **menor ID sempre inicia** a conexão (evita duplicatas). Exemplo: `node0` conecta em `node1`, `node2` e `node3`; `node2` conecta apenas em `node3`.
@@ -67,25 +67,25 @@ Cada linha entre nós é **uma conexão TCP bidirecional**. O nó de **menor ID 
 Todos os quatro containers são idênticos. Dentro de cada um há um único processo Python estruturado assim:
 
 ```
-                         ┌──────── Container nodeN ────────┐
+                         ┌──────── Container nodeN ────--────┐
                          │                                   │
-                         │   main.py ──► Node (orquestrador)│
+                         │   main.py ──► Node (orquestrador) │
                          │                    │              │
-                         │         ┌──────────┼──────────┐  │
-                         │         │          │          │  │
-                         │   ┌─────▼──┐ ┌────▼───┐ ┌────▼──┐  │
-                         │   │Lamport │ │Ricart- │ │ Bully │  │
-                         │   │ Clock  │ │Agrawala│ │       │  │
-                         │   └───┬────┘ └────┬───┘ └───┬───┘  │
-                         │       │           │         │    │  │
-                         │       └─────┬─────┘         │    │  │
-                         │             │                │    │  │
-                         │      ┌──────▼────────────────▼──┐ │  │
-                         │      │    Transporte TCP         │ │  │
-                         │      │  (envia e recebe JSON)    │ │  │
-                         │      └──────────────┬────────────┘ │  │
-                         │                     │              │  │
-                         └─────────────────────┼──────────────┘  │
+                         │         ┌──────────┼─────────┐    │
+                         │         │          │         │    │
+                         │   ┌─────▼──┐ ┌────▼───┐ ┌────▼──┐ │
+                         │   │Lamport │ │Ricart- │ │ Bully │ │
+                         │   │ Clock  │ │Agrawala│ │       │ │
+                         │   └───┬────┘ └────┬───┘ └───┬───┘ │
+                         │       │           │         │     │  
+                         │       └─────┬─────┘         │     │ 
+                         │             │               │     │ 
+                         │      ┌──────▼───────────────▼-──┐ │  
+                         │      │    Transporte TCP        │ │  
+                         │      │  (envia e recebe JSON)   │ │  
+                         │      └──────────────┬───────────┘ │  
+                         │                     │             │  
+                         └─────────────────────┼─────────────┘  
                                                │
                               ◄────────────────▼────────────────►
                                   mensagens TCP para/de outros nós
@@ -112,7 +112,7 @@ node0 quer entrar na seção crítica:
     │                │               │               │
     │──── REQUEST ──►│               │               │
     │──── REQUEST ──────────────────►│               │
-    │──── REQUEST ───────────────────────────────────►│
+    │──── REQUEST ──────────────────────────────────►│
     │                │               │               │
     │◄─── REPLY ─────│               │               │   (node1 concede)
     │◄─── REPLY ─────────────────────│               │   (node2 concede)
@@ -121,7 +121,7 @@ node0 quer entrar na seção crítica:
   [entra na seção crítica]           │               │
   [escreve em critical.log]          │               │
     │                │               │               │
-  [sai]             │               │               │
+  [sai]              │               │               │
     │──── REPLY ────►│  (libera node1 se estava esperando)
     │──── REPLY ─────────────────────►  (libera node2 ...)
     │──── REPLY ──────────────────────────────────────►
