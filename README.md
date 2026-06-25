@@ -20,16 +20,6 @@ Cluster distribuído em Python com troca real de mensagens TCP, implementando:
 - [uv](https://docs.astral.sh/uv/) — desenvolvimento e execução local
 - [Docker Desktop](https://docs.docker.com/get-docker/) — recomendado para a demonstração final (cluster em contêineres)
 
-### Instalar Docker no macOS (Apple Silicon)
-
-Se `docker` retornar `command not found`, instale o Docker Desktop:
-
-```bash
-brew install --cask docker
-```
-
-Depois abra o app **Docker** em `/Applications/Docker.app` e aguarde o ícone da baleia ficar estável na barra de menu. Só então rode `docker compose up --build`.
-
 ## Estrutura do projeto
 
 ```
