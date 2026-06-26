@@ -1,0 +1,345 @@
+\documentclass[10pt, a4paper, titlepage]{extarticle}
+
+% --- PACOTES ---
+\usepackage[brazil]{babel}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{xeCJK}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{booktabs}
+\usepackage{xurl}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{enumitem}
+\usepackage{url}
+\usepackage{listings}
+\setlist{nosep}
+
+\setCJKmainfont{Noto Serif CJK SC}
+\captionsetup{font=footnotesize}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible,
+  keepspaces=true,
+}
+
+\geometry{a4paper, left=20mm, right=20mm, top=20mm, bottom=20mm}
+
+\begin{document}
+\begin{titlepage}
+    \centering
+    \vspace*{5cm}
+    \begin{center}
+        \includegraphics[height=2.2cm]{UNICAMP_logo.png}
+        \hspace{0.em}
+        \includegraphics[height=2.2cm]{logo_instituto_de_computacao.png}
+    \end{center}
+
+    \vspace{2cm}
+    {\Large \textbf{Implementação de algoritmos distribuídos}\\[0.8em]}
+    {\large MC714 -- Sistemas Distribuídos\\[2.5em]}
+
+    {\normalsize
+        Ana Carolina de Almeida Cardoso, 246914\\
+        Pedro Damasceno Vasconcellos, 260640\\[2em]
+    }
+    {\normalsize
+        Instituto de Computação\\
+        Universidade Estadual de Campinas -- Unicamp \\[2em]
+    }
+    {\small Repositório: \url{https://github.com/carolkekas28/MC714}}
+    \vfill
+    {\small Campinas, SP \\ Junho de 2026}
+\end{titlepage}
+
+\section{Introdução}
+Sistemas distribuídos reúnem processos autônomos em nós distintos, conectados por rede e sem memória compartilhada. Coordenar esses processos exige mecanismos para ordenar eventos, serializar o acesso a recursos comuns e recuperar-se da falha de um coordenador. Este trabalho implementa três algoritmos clássicos que respondem a essas necessidades: o relógio lógico de Lamport, a exclusão mútua de Ricart-Agrawala e a eleição de líder Bully.
+
+A solução consiste em um cluster de quatro nós (\texttt{node0} a \texttt{node3}), implementado em Python com \texttt{asyncio} e implantado via Docker Compose. Os nós comunicam-se exclusivamente por mensagens TCP (JSON com framing de 4 bytes), e não há simulação de rede por arquivos. O relógio de Lamport é compartilhado pelos três algoritmos e atualizado em cada envio e recebimento de mensagem.
+
+Busca-se, com isso, demonstrar na prática a troca de mensagens entre processos distribuídos e validar o comportamento dos algoritmos por testes automatizados e experimentos de exclusão mútua e eleição de líder. As seções~\ref{sec:fundamentacao} a~\ref{sec:conclusao} descrevem, respectivamente, a teoria dos algoritmos, a implementação, os experimentos e as conclusões do trabalho.
+
+\section{Fundamentação teórica}
+\label{sec:fundamentacao}
+Esta seção resume os três algoritmos implementados no cluster. Todos assumem processos autônomos conectados por troca de mensagens, sem memória compartilhada e sem relógio físico global confiável.
+
+\subsection{Relógio lógico de Lamport}
+\label{sec:lamport}
+Em um sistema distribuído, eventos ocorrem em processos distintos, e não há como comparar diretamente seus instantes físicos. Lamport propôs associar a cada evento um timestamp lógico inteiro, de forma a capturar a relação de precedência causal (\emph{happens-before})~\cite{lamport1978}.
+
+Cada processo $P_i$ mantém um contador local $C_i$, inicializando em zero. As regras de atualização são:
+
+\begin{enumerate}
+    \item \textbf{Evento local:} $C_i \leftarrow C_i + 1$.
+    \item \textbf{Envio de mensagem:} $C_i \leftarrow C_i + 1$; o valor de $C_i$ é anexado à mensagem.
+    \item \textbf{Recebimento de mensagem} com timestamp $t$: $C_i \leftarrow \max(C_i, t) + 1$.
+\end{enumerate}
+
+Se dois eventos $a$ e $b$ satisfazem $a \rightarrow b$ (ou seja, $a$ precede causalmente $b$), então o timestamp de $a$ é estritamente menor que o de $b$. O inverso não vale: timestamps iguais ou ordenados não implicam, por si só, relação causal. O relógio de Lamport define, portanto, uma ordenação parcial dos eventos, útil para desempate em algoritmos de sincronização, como o de Ricart-Agrawala adotado neste trabalho.
+
+No cluster implementado, o relógio é compartilhado por todos os nós e atualizado automaticamente em cada envio e recebimento de mensagem TCP.
+
+\subsection{Exclusão mútua Ricart-Agrawala}
+\label{sec:ricart}
+O algoritmo de Ricart-Agrawala~\cite{ricart1981} garante exclusão mútua distribuída sem um coordenador central. Cada processo que deseja entrar na seção crítica envia uma mensagem \texttt{REQUEST} a todos os demais, carregando um timestamp de Lamport. O processo só entra na seção crítica após receber \texttt{REPLY} de todos os outros processos.
+
+Quando um processo $P_i$ recebe um \texttt{REQUEST} de $P_j$ com timestamp $t_j$, decide responder imediatamente ou adiar a resposta (\emph{deferred reply}) com base em três condições:
+
+\begin{itemize}
+  \item se $P_i$ não está na seção crítica e não possui pedido pendente, responde imediatamente;
+  \item se $P_i$ possui pedido pendente com timestamp menor, ou com mesmo timestamp e ID menor, responde imediatamente (o pedido de $P_j$ tem menor prioridade);
+  \item caso contrário, adia o \texttt{REPLY} até sair da seção crítica.
+\end{itemize}
+
+A prioridade entre pedidos concorrentes é definida pelo par $(t, \mathit{id})$: vence o menor timestamp e, em caso de empate, vence o menor identificador de processo. Ao sair da seção crítica, $P_i$ envia \texttt{REPLY} a todos os processos cuja resposta havia sido adiada.
+
+O algoritmo satisfaz as três propriedades desejadas de exclusão mútua: segurança (no máximo um processo na seção crítica), vivacidade (todo pedido é eventualmente atendido, na ausência de falhas) e ordem de entrada compatível com Lamport (se $P_i$ pediu antes de $P_j$ no sentido de Lamport, $P_i$ entra primeiro). O custo é de $2(n - 1)$ mensagens por entrada na seção crítica em um sistema com $n$ processos, pois cada acesso exige um \texttt{REQUEST} broadcast e $n - 1$ respostas.
+
+\subsection{Eleição de líder Bully}
+O algoritmo Bully~\cite{garcia1982} elege como coordenador o processo de maior identificador entre os que permanecem ativos. A premissa é que IDs são únicos e que qualquer processo pode detectar a falha do líder atual.
+
+As mensagens utilizadas são:
+
+\begin{itemize}
+  \item \texttt{ELECTION}: anúncio de início de eleição, enviado a todos os processos de ID superior;
+  \item \texttt{OK}: resposta de um processo de ID maior, indicando que ele assumirá (ou já conduz) a eleição;
+  \item \texttt{COORDINATOR}: anúncio do novo líder eleito;
+  \item \texttt{HEARTBEAT}: sinal periódico enviado pelo líder para indicar que está ativo.
+\end{itemize}
+
+Quando um processo $P_i$ detecta que o líder não responde dentro de um timeout (ausência de \texttt{HEARTBEAT}), inicia uma eleição enviando \texttt{ELECTION} a todos os processos com ID maior que $i$. Se algum deles estiver ativo, responde com \texttt{OK} e conduz sua própria eleição. Se $P_i$ não recebe \texttt{OK} de nenhum processo superior dentro do prazo estipulado, assume que possui o maior ID ativo e anuncia-se como líder via \texttt{COORDINATOR}. Os demais processos aceitam o anúncio e passam a monitorar o novo líder.
+
+O Bully é simples de implementar e de demonstrar, mas possui custo de mensagem elevado em caso de falha frequente ($O(n^2)$ no pior caso) e pressupõe que falhas sejam detectáveis por timeout, o que é razoável em redes locais, como a rede Docker do cluster implementado.
+
+\section{Arquitetura e implementação}
+\label{sec:implementacao}
+
+\subsection{Ambiente e arquitetura do cluster}
+\label{sec:ambiente}
+O sistema foi implementado em Python~3.12 com a biblioteca \texttt{asyncio}~\cite{python-asyncio} para concorrência de rede. O cluster é composto por quatro processos idênticos (\texttt{node0} a \texttt{node3}), cada um executado em um contêiner Docker orquestrado pelo Docker Compose~\cite{docker-compose}. Os contêineres comunicam-se por uma rede privada (\texttt{cluster}), na qual cada nó é identificado pelo hostname correspondente (\texttt{node0:8000}, \texttt{node1:8001}, etc).
+
+A Figura~\ref{fig:arquitetura} resume a implantação. Os quatro nós formam uma malha completa: cada par de processos mantém uma conexão TCP bidirecional. Para evitar sockets duplicados, adota-se a regra de que o processo de menor ID inicia a conexão com os de ID superior; o processo de maior ID apenas aceita conexões entrantes. Após o estabelecimento do socket, o nó iniciador envia uma mensagem \texttt{HELLO} para identificar-se antes de qualquer mensagem dos algoritmos.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=1.0\linewidth]{arquitetura.png}
+  \caption{Arquitetura do cluster Docker: quatro nós conectados por malha TCP completa (6 conexões, mensagens JSON) na rede \texttt{cluster}; pasta \texttt{./shared} montada como volume em \texttt{/app/shared} para registro da seção crítica e comandos de demonstração (não usada na comunicação entre algoritmos). Setas tracejadas indicam ordem de inicialização (\texttt{node0} $\rightarrow$ \texttt{node3}).}
+  \label{fig:arquitetura}
+\end{figure}
+
+A pasta \texttt{./shared} do projeto é montada como volume em todos os contêineres (\texttt{/app/shared}). Essa pasta não participa da comunicação entre os algoritmos: ela serve apenas para (i)~registrar evidências de acesso à seção crítica no arquivo \texttt{critical.log} e (ii)~receber comandos externos de demonstração via arquivos em \texttt{commands/}, utilizados pelo script \texttt{command.sh}. Toda coordenação distribuída ocorre exclusivamente por mensagens TCP.
+
+Cada nó executa o mesmo programa (\texttt{main.py}), que instancia a classe \texttt{Node}, orquestrador central do sistema. A classe \texttt{Node} agrega o relógio de Lamport, o módulo de exclusão mútua (Ricart-Agrawala), o módulo de eleição (Bully) e a camada de transporte TCP, compartilhando uma única instância de relógio entre os três algoritmos (Figura~\ref{fig:interno}).
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=1.0\linewidth]{interno.png}
+  \caption{Estrutura interna de \texttt{nodeN}: no \textbf{envio}, os algoritmos chamam \texttt{MessageTransport} diretamente (relógio Lamport via \texttt{on\_send}); no \textbf{recebimento}, mensagens passam por \texttt{handle\_message} antes de serem entregues ao mutex ou ao Bully (\texttt{on\_receive} atualiza o relógio). Arquivos em \texttt{/app/shared} (\texttt{commands/}, \texttt{critical.log}) não participam da comunicação entre nós.}
+  \label{fig:interno}
+\end{figure}
+
+A configuração de cada nó é definida por variáveis de ambiente injetadas pelo Docker Compose: \texttt{NODE\_ID}, \texttt{NODE\_COUNT}, \texttt{BASE\_PORT}, \texttt{PEERS} (lista de endereços dos pares) e \texttt{DEMO\_MODE} (\texttt{mutex}, \texttt{lamport} ou \texttt{none}). As portas expostas no host seguem a faixa 8000--8003.
+
+\subsection{Detalhes da implementação e testes}
+\label{sec:detalhes}
+
+\subsubsection{Camada de comunicação}
+A classe \texttt{MessageTransport} encapsula toda a troca de mensagens. Cada mensagem é um objeto JSON com os campos \texttt{type}, \texttt{sender}, \texttt{lamport\_ts} e \texttt{payload}. O framing TCP utiliza quatro bytes iniciais (big-endian) indicando o tamanho do payload, seguidos do corpo JSON -- padrão que evita ambiguidade na leitura de fluxos contínuos.
+
+Os tipos de mensagem implementados são: \texttt{HELLO} (handshake), \texttt{EVENT} (demonstração Lamport), \texttt{REQUEST} e \texttt{REPLY} (Ricart-Agrawala), \texttt{ELECTION}, \texttt{OK}, \texttt{COORDINATOR} e \texttt{HEARTBEAT} (Bully). O envio (\texttt{send}) e o broadcast (\texttt{broadcast}) incrementam o relógio de Lamport via \texttt{on\_send} e carimbam o timestamp na mensagem; o recebimento atualiza o relógio local via \texttt{on\_receive} antes de entregar a mensagem ao despachante.
+
+O método \texttt{broadcast} tolera peers inalcançáveis: se um nó está morto, a mensagem é enviada aos demais sem interromper o fluxo; esse é um comportamento necessário para a demonstração de eleição com falha simulada do líder.
+
+\subsubsection{Integração dos algoritmos}
+A classe \texttt{Node} implementa o despacho de mensagens em \texttt{handle\_message}, roteando cada tipo ao módulo correspondente:
+
+\begin{itemize}
+  \item \texttt{REQUEST}/\texttt{REPLY} $\rightarrow$ \texttt{RicartAgrawala};
+  \item \texttt{ELECTION}/\texttt{OK}/\texttt{COORDINATOR}/\texttt{HEARTBEAT} $\rightarrow$ \texttt{BullyElection};
+  \item \texttt{EVENT} $\rightarrow$ registro de evento Lamport remoto.
+\end{itemize}
+
+No módulo Ricart-Agrawala, um nó solicita a seção crítica com \texttt{REQUEST} broadcast, aguarda \texttt{REPLY} de todos os pares e, ao entrar, registra uma linha em \texttt{critical.log} com o timestamp Lamport do pedido. Respostas adiadas (\emph{deferred replies}) são enviadas na saída da seção crítica. A prioridade entre pedidos concorrentes segue o par $(t, \mathit{id})$ descrito na Seção~\ref{sec:ricart}.
+
+No módulo Bully, o nó de maior ID (\texttt{node3}) torna-se líder inicial ao não possuir peers superiores. O líder envia \texttt{HEARTBEAT} periodicamente; os seguidores monitoram o tempo desde o último heartbeat e iniciam eleição (\texttt{ELECTION}) em caso de timeout. O processo que não recebe \texttt{OK} de nenhum peer superior anuncia-se coordenador via \texttt{COORDINATOR}.
+
+\subsubsection{Fontes de código}
+\label{sec:fontes}
+A implementação foi desenvolvida pela dupla com base nos artigos originais~\cite{lamport1978,ricart1981,garcia1982} e no material da disciplina MC714. Não foram utilizados trechos de código de terceiros sem adaptação: a camada de transporte TCP, a integração dos algoritmos em \texttt{Node} e os scripts de demonstração foram implementados integralmente em Python. Consultaram-se apenas a documentação oficial de \texttt{asyncio}~\cite{python-asyncio} e do Docker Compose~\cite{docker-compose} para configuração do ambiente de execução.
+
+\subsection{Testes automatizados}
+\label{sec:testes}
+A validação do sistema inclui 17 testes com \texttt{pytest}, divididos em testes unitários e de integração leve (Tabela~\ref{tab:testes}). Os testes unitários verificam as regras do relógio de Lamport, a serialização de mensagens, as regras de prioridade e \emph{defer} do Ricart-Agrawala e o comportamento básico do Bully. Os testes de integração sobem clusters de três nós em \texttt{localhost} (sem Bully, para reduzir o tempo de inicialização) e validam: propagação de eventos Lamport, serialização de acesso à seção crítica e eleição do nó de maior ID como coordenador inicial.
+
+\begin{table}[ht]
+  \centering
+  \caption{Suíte de testes automatizados.}
+  \label{tab:testes}
+  \begin{tabular}{@{}lll@{}}
+    \toprule
+    Arquivo & Escopo & Testes \\
+    \midrule
+    \texttt{test\_lamport.py}       & Regras do relógio       & 4 \\
+    \texttt{test\_messages.py}      & Serialização JSON       & 3 \\
+    \texttt{test\_ricart\_agrawala.py} & Prioridade e defer   & 4 \\
+    \texttt{test\_bully.py}         & Eleição e coordenador   & 3 \\
+    \texttt{test\_integration.py}   & Cluster multi-nó        & 3 \\
+    \midrule
+    \textbf{Total}                 &                         & \textbf{17} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Experimentos e resultados}
+\label{sec:experimentos}
+Para validar a implementação, realizamos quatro experimentos reproduzíveis: três demonstram o comportamento dos algoritmos em cluster (Lamport, exclusão mútua e eleição) e um executa a suíte de testes automatizados. Todos podem ser repetidos a partir dos scripts disponíveis no repositório.
+
+\subsection{Metodologia}
+O cluster foi executado de duas formas: localmente (\texttt{run\_local\_cluster.sh}) e via Docker Compose. Nos experimentos com Docker, utilizamos quatro contêineres (\texttt{node0} a \texttt{node3}) conectados pela rede privada \texttt{cluster}. A evidência de exclusão mútua é registrada em \texttt{shared/critical.log}; os demais resultados foram coletados a partir dos logs dos processos (\texttt{docker compose logs} ou arquivos em \texttt{.local-cluster/logs/}).
+
+A Tabela~\ref{tab:experimentos} resume os cenários executados antes da análise detalhada de cada experimento.
+
+\begin{table}[ht]
+  \centering
+  \caption{Cenários experimentais realizados.}
+  \label{tab:experimentos}
+  \small
+  \begin{tabular}{@{}p{2.2cm}p{3.8cm}p{4.2cm}p{3.8cm}@{}}
+    \toprule
+    Experimento & Comando & Objetivo & Evidência \\
+    \midrule
+    Lamport & \texttt{DEMO\_MODE=lamport} &
+    Verificar atualização coerente do relógio lógico & Logs com \texttt{Local event} e \texttt{Observed remote event} \\[0.4em]
+    Exclusão mútua & \texttt{./scripts/demo\_mutex.sh docker 45} &
+    Garantir acesso serializado à seção crítica &
+    \texttt{critical.log} sem sobreposição \\[0.4em]
+    Eleição Bully &
+    \texttt{./scripts/demo\_election.sh docker} &
+    Reeleger líder após falha de \texttt{node3} &
+    Logs de \texttt{ELECTION}, \texttt{OK}, \texttt{COORDINATOR} \\[0.4em]
+    Testes auto. &
+    \texttt{uv run pytest -v} &
+    Validar regras unitárias e integração &
+    17 testes aprovados \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Experimento 1: relógio lógico de Lamport}
+\textbf{Configuração.} Cluster com \texttt{DEMO\_MODE=lamport}. Cada nó emite eventos locais periodicamente e envia mensagens \texttt{EVENT} ao vizinho seguinte (\texttt{send\_lamport\_event}).
+
+\textbf{Procedimento.} Após inicialização, observamos os logs por aproximadamente 30~s, verificando que (i)~cada evento local incrementa o relógio do emissor e (ii)~eventos recebidos atualizam o relógio do receptor conforme a regra $\max(C_i, t) + 1$.
+
+\textbf{Resultado.} Os timestamps registrados nos logs crescem de forma consistente: o relógio do receptor nunca retrocede após receber uma mensagem, e eventos observados remotamente exibem timestamp igual ou superior ao do evento de envio. O teste de integração \texttt{test\_lamport\_event\_propagates\_between\_nodes} confirma que, após um \texttt{EVENT} de \texttt{node0} para \texttt{node1}, ambos os nós possuem relógio $\geq 1$. O Listagem~\ref{lst:lamport-log} apresenta um trecho representativo dos logs coletados.
+
+\begin{lstlisting}[caption={Trecho de log do experimento Lamport (\texttt{docker compose logs node1}).},label=lst:lamport-log]
+Local event (Lamport ts=4)
+SEND -> node2 EVENT ts=5
+RECV <- node0 EVENT ts=3 (local clock now 4)
+Observed remote event from node0 at Lamport ts=3: event from node0
+Local event (Lamport ts=6)
+\end{lstlisting}
+
+\subsection{Experimento 2: exclusão mútua Ricart-Agrawala}
+\textbf{Configuração.} \texttt{./scripts/demo\_mutex.sh docker 45} --- sobe o cluster com demo automática de mutex por 45~s.
+
+\textbf{Procedimento.} Cada nó solicita a seção crítica em rodadas escalonadas. Ao entrar, grava uma linha em \texttt{critical.log} no formato \texttt{<timestamp> node<N> lamport=<ts>}. Verificamos que nenhum par de entradas indica acesso simultâneo.
+
+\textbf{Resultado.} O arquivo \texttt{critical.log} contém entradas sequenciais, uma por acesso, com timestamps Lamport distintos e em ordem crescente --- indicando que apenas um nó ocupava a seção crítica por vez. Os logs também registram o ciclo completo (\texttt{REQUEST} $\rightarrow$ \texttt{ENTER} $\rightarrow$ \texttt{EXIT}) e respostas adiadas (\texttt{Deferred REPLY}) quando dois nós solicitam acesso concorrente. O teste \texttt{test\_mutex\_serializes\_three\_node\_access} valida o mesmo comportamento em cluster de três nós. A Listagem~\ref{lst:critical-log} mostra entradas obtidas após execução do cluster.
+
+\begin{lstlisting}[caption={Trecho de \texttt{shared/critical.log} após demo de exclusão mútua.},label=lst:critical-log]
+2026-06-26T00:27:35.559738+00:00 node0 lamport=3
+2026-06-26T00:27:35.617530+00:00 node1 lamport=6
+2026-06-26T00:27:35.669368+00:00 node2 lamport=9
+\end{lstlisting}
+
+Cada linha corresponde a um acesso exclusivo; os valores \texttt{lamport} são distintos e crescentes, confirmando serialização.
+
+\subsection{Experimento 3: eleição de líder Bully}
+\textbf{Configuração.}
+\texttt{./scripts/demo\_election.sh docker} com
+\texttt{RUN\_MUTEX\_DEMO=false}, para isolar o algoritmo de eleição.
+
+\textbf{Procedimento.}
+\begin{enumerate}[nosep]
+  \item Aguardamos 25~s para o cluster estabilizar;
+  \item Confirmamos que \texttt{node3} (maior ID) é o coordenador inicial;
+  \item Executamos \texttt{docker compose stop node3};
+  \item Aguardamos 8~s e verificamos a reeleição nos logs dos nós remanescentes.
+\end{enumerate}
+
+\textbf{Resultado.} Antes da falha, os logs registram \texttt{Accepted node3 as coordinator}. Após o \emph{timeout} do \texttt{HEARTBEAT}, os seguidores iniciam eleição (\texttt{Starting election}). Como \texttt{node3} está inativo, nenhum processo superior responde com \texttt{OK} a \texttt{node2}, que anuncia \texttt{I am the new coordinator (node2)}. Os demais nós registram \texttt{Accepted node2 as coordinator}. A Listagem~\ref{lst:election-log} resume a sequência observada.
+
+\begin{lstlisting}[caption={Trecho de log da reeleição após parada de \texttt{node3}.},label=lst:election-log]
+Accepted node3 as coordinator
+Leader node3 timed out (3.1s), starting election
+Starting election
+I am the new coordinator (node2)
+Accepted node2 as coordinator
+\end{lstlisting}
+
+O comportamento confirma a regra do Bully: o maior ID \emph{ativo} assume a liderança.
+
+\subsection{Experimento 4: testes automatizados}
+\textbf{Procedimento.} Execução de \texttt{uv sync --extra dev} seguida de \texttt{uv run pytest -v}.
+
+\textbf{Resultado.} Todos os 17 testes passaram: 4 de Lamport, 3 de serialização de mensagens, 4 de Ricart-Agrawala, 3 de Bully e 3 de integração multi-nó (Tabela~\ref{tab:testes}, Seção~\ref{sec:testes}). A Listagem~\ref{lst:pytest} apresenta o encerramento da suíte.
+
+\begin{lstlisting}[caption={Saída final de \texttt{uv run pytest -v}.},label=lst:pytest]
+tests/test_ricart_agrawala.py::test_handle_reply_enters_critical_section PASSED
+tests/test_integration.py::test_bully_highest_node_becomes_initial_coordinator PASSED
+============================== 17 passed in 5.54s ==============================
+\end{lstlisting}
+
+\subsection{Análise}
+Os experimentos confirmam que os três algoritmos desenvolvidos operam corretamente sobre comunicação TCP real, sem simulação por arquivos. A exclusão mútua garante serialização observável no log compartilhado; a eleição recupera-se da falha do líder em poucos segundos (limitado pelos timeouts configurados: \texttt{LEADER\_TIMEOUT=3s}, \texttt{ELECTION\_TIMEOUT=2s}); e o relógio de Lamport mantém consistência em todos os envios e recebimentos. A principal limitação observada é que o sistema pressupõe falhas por \emph{crash-stop} e detecção por timeout -- cenários de partição de redes ou mensagens atrasadas não são tratados.
+
+\section{Conclusão}
+\label{sec:conclusao}
+Este trabalho implementou um cluster distribuído de quatro nós em Python, com comunicação real via sockets TCP, integrando três mecanismos clássicos de coordenação: relógio lógico de Lamport, exclusão mútua Ricart-Agrawala e eleição de líder Bully. Os três algoritmos compartilham a mesma camada de transporte e a mesma instância de relógio lógico, atualizada automaticamente em cada envio e recebimento de mensagem.
+
+Os experimentos realizados --- demonstrações de mutex e eleição, além de 17 testes automatizados --- confirmaram o comportamento esperado: timestamps Lamport coerentes, acesso serializado à seção crítica (registrado em \texttt{critical.log}) e reeleição do líder após falha simulada do coordenador (\texttt{node3} $\rightarrow$ \texttt{node2}). A solução atende aos requisitos da disciplina de implementar os três algoritmos com troca de mensagens distribuída, sem simulação por arquivos.
+
+Entre as principais dificuldades encontradas estiveram a coordenação de conexões TCP na malha completa (evitar sockets duplicados e tolerar peers mortos no \texttt{broadcast}), o ajuste fino de timeouts no Bully para evitar eleições prematuras na inicialização e a integração de três algoritmos concorrentes sobre o mesmo canal de comunicação.
+
+Como limitações, o sistema assume falhas do tipo \emph{crash-stop} e detecção por timeout, sem tratar partições de rede nem recuperação de mensagens perdidas. Trabalhos futuros poderiam incluir suporte a mais nós, métricas de latência e comparação com outros algoritmos de exclusão mútua ou consenso.
+
+\section*{Referências}
+\begin{thebibliography}{99}
+\bibitem{lamport1978}
+L.~Lamport.
+\newblock Time, clocks, and the ordering of events in a distributed system.
+\newblock \emph{Communications of the ACM}, 21(7):558--565, 1978.
+
+\bibitem{ricart1981}
+G.~Ricart and A.~Agrawala.
+\newblock An optimal algorithm for mutual exclusion in computer networks.
+\newblock \emph{Communications of the ACM}, 24(1):9--17, 1981.
+
+\bibitem{garcia1982}
+J.~Garcia-Molina.
+\newblock Elections in a distributed computing system.
+\newblock \emph{IEEE Transactions on Computers}, 31(1):48--59, 1982.
+
+\bibitem{python-asyncio}
+Python Software Foundation.
+\newblock \emph{asyncio --- Asynchronous I/O}.
+\newblock \url{https://docs.python.org/3/library/asyncio.html}.
+\newblock Acesso em: 24 jun.~2026.
+
+\bibitem{docker-compose}
+Docker Inc.
+\newblock \emph{Docker Compose documentation}.
+\newblock \url{https://docs.docker.com/compose/}.
+\newblock Acesso em: 24 jun.~2026.
+
+\end{thebibliography}
+
+\end{document}
