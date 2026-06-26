@@ -172,7 +172,45 @@ No módulo Bully, o nó de maior ID (\texttt{node3}) torna-se líder inicial ao 
 
 \subsubsection{Fontes de código}
 \label{sec:fontes}
-A implementação foi desenvolvida pela dupla com base nos artigos originais~\cite{lamport1978,ricart1981,garcia1982} e no material da disciplina MC714. Não foram utilizados trechos de código de terceiros sem adaptação: a camada de transporte TCP, a integração dos algoritmos em \texttt{Node} e os scripts de demonstração foram implementados integralmente em Python. Consultaram-se apenas a documentação oficial de \texttt{asyncio}~\cite{python-asyncio} e do Docker Compose~\cite{docker-compose} para configuração do ambiente de execução.
+Conforme exigido pelo enunciado da disciplina, registramos abaixo o que foi consultado durante o desenvolvimento e o que foi implementado pela dupla. A Tabela~\ref{tab:fontes} resume essa rastreabilidade.
+
+\begin{table}[ht]
+  \centering
+  \caption{Fontes consultadas e implementação original.}
+  \label{tab:fontes}
+  \small
+  \begin{tabular}{@{}p{3.2cm}p{4.5cm}p{5.5cm}@{}}
+    \toprule
+    Componente & Fonte consultada & O que foi feito \\
+    \midrule
+    Relógio de Lamport &
+    Artigo original~\cite{lamport1978} &
+    Implementação própria em \texttt{lamport.py} (regras \texttt{local\_event}, \texttt{on\_send}, \texttt{on\_receive}). \\[0.3em]
+    Ricart-Agrawala &
+    Artigo original~\cite{ricart1981} &
+    Implementação própria em \texttt{ricart\_agrawala.py}, incluindo \emph{defer} e prioridade $(t, \mathit{id})$. \\[0.3em]
+    Bully &
+    Artigo original~\cite{garcia1982} &
+    Implementação própria em \texttt{bully.py}, com \texttt{HEARTBEAT} e timeouts configuráveis. \\[0.3em]
+    Transporte TCP &
+    Documentação \texttt{asyncio}~\cite{python-asyncio} (APIs \texttt{start\_server}, \texttt{open\_connection}, \texttt{StreamReader}/\texttt{StreamWriter}) &
+    Framing JSON (4 bytes + payload), handshake \texttt{HELLO} e malha TCP implementados em \texttt{transport.py}; lógica de reconexão e \texttt{broadcast} tolerante a falhas é original. \\[0.3em]
+    Orquestração &
+    --- &
+    Despacho em \texttt{node.py} e ponto de entrada \texttt{main.py} escritos pela dupla. \\[0.3em]
+    Docker / Compose &
+    Documentação oficial~\cite{docker-compose} &
+    \texttt{Dockerfile}, \texttt{docker-compose.yml} e scripts \texttt{demo\_*.sh} adaptados ao cluster de 4 nós; sem uso de templates prontos de projeto distribuído. \\[0.3em]
+    Testes &
+    Documentação \texttt{pytest} e \texttt{pytest-asyncio} &
+    Suíte em \texttt{tests/} escrita pela dupla; \texttt{helpers.py} para subir clusters locais em portas dinâmicas. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\textbf{Não utilizamos} repositórios prontos de implementação dos algoritmos, trechos copiados de fóruns (Stack Overflow, GitHub \emph{gists}, etc.) nem código gerado por ferramentas de IA incorporado sem revisão. O padrão de \emph{length-prefix framing} para TCP foi adotado como prática comum de protocolos binários (documentado em materiais de redes), mas a implementação concreta --- integração com Lamport, despacho de mensagens e reconexão entre nós --- é original deste trabalho.
+
+Os únicos trechos reutilizados são convenções de biblioteca padrão (por exemplo, \texttt{json.dumps}/\texttt{json.loads} e chamadas da API \texttt{asyncio}), sem adaptação de lógica de algoritmo distribuído de terceiros.
 
 \subsection{Testes automatizados}
 \label{sec:testes}
@@ -237,14 +275,18 @@ A Tabela~\ref{tab:experimentos} resume os cenários executados antes da análise
 
 \textbf{Procedimento.} Após inicialização, observamos os logs por aproximadamente 30~s, verificando que (i)~cada evento local incrementa o relógio do emissor e (ii)~eventos recebidos atualizam o relógio do receptor conforme a regra $\max(C_i, t) + 1$.
 
-\textbf{Resultado.} Os timestamps registrados nos logs crescem de forma consistente: o relógio do receptor nunca retrocede após receber uma mensagem, e eventos observados remotamente exibem timestamp igual ou superior ao do evento de envio. O teste de integração \texttt{test\_lamport\_event\_propagates\_between\_nodes} confirma que, após um \texttt{EVENT} de \texttt{node0} para \texttt{node1}, ambos os nós possuem relógio $\geq 1$. O Listagem~\ref{lst:lamport-log} apresenta um trecho representativo dos logs coletados.
+\textbf{Resultado.} Os timestamps registrados nos logs crescem de forma consistente: o relógio do receptor nunca retrocede após receber uma mensagem, e eventos observados remotamente exibem timestamp igual ou superior ao do evento de envio. O teste de integração \texttt{test\_lamport\_event\_propagates\_between\_nodes} confirma que, após um \texttt{EVENT} de \texttt{node0} para \texttt{node1}, ambos os nós possuem relógio $\geq 1$. A Listagem~\ref{lst:lamport-log} apresenta um trecho representativo dos logs coletados.
+
+\textbf{Análise linha a linha.} Na Listagem~\ref{lst:lamport-log}, em \texttt{node1}: (1)~\texttt{Local event (ts=1)} --- incremento por evento local; (2)~\texttt{SEND ... ts=2} --- \texttt{on\_send} ($1 \rightarrow 2$); (3)~\texttt{RECV ... ts=3 (local clock now 4)} --- \texttt{on\_receive}: $\max(2, 3)+1 = 4$; (4)~\texttt{Observed remote event... ts=3} --- timestamp \emph{da mensagem}, não do relógio local; (5)~\texttt{Local event (ts=5)} --- novo incremento local ($4 \rightarrow 5$). O relógio nunca retrocede.
+
+\textbf{Escopo da demo.} A demonstração automática de Lamport envia \texttt{EVENT} periodicamente ao vizinho seguinte; é intencionalmente simples, pois o foco do trabalho está na integração dos três algoritmos sobre o mesmo transporte. Causalidade mais rica aparece no experimento de mutex, onde timestamps Lamport definem a ordem de entrada na seção crítica (Seção~\ref{sec:ricart}, Experimento~2).
 
 \begin{lstlisting}[caption={Trecho de log do experimento Lamport (\texttt{docker compose logs node1}).},label=lst:lamport-log]
-Local event (Lamport ts=4)
-SEND -> node2 EVENT ts=5
+Local event (Lamport ts=1)
+SEND -> node2 EVENT ts=2
 RECV <- node0 EVENT ts=3 (local clock now 4)
 Observed remote event from node0 at Lamport ts=3: event from node0
-Local event (Lamport ts=6)
+Local event (Lamport ts=5)
 \end{lstlisting}
 
 \subsection{Experimento 2: exclusão mútua Ricart-Agrawala}
@@ -261,6 +303,8 @@ Local event (Lamport ts=6)
 \end{lstlisting}
 
 Cada linha corresponde a um acesso exclusivo; os valores \texttt{lamport} são distintos e crescentes, confirmando serialização.
+
+\textbf{Análise linha a linha.} (1)~\texttt{node0 lamport=3} --- primeiro acesso, timestamp do \texttt{REQUEST} original; (2)~\texttt{node1 lamport=6} --- \texttt{node1} só entrou após receber todos os \texttt{REPLY}s; $6 > 3$ indica que o pedido de \texttt{node1} ocorreu depois no ordenamento Lamport; (3)~\texttt{node2 lamport=9} --- idem para \texttt{node2}. Não há sobreposição temporal de acessos: cada linha representa um instante em que um único nó estava na seção crítica. Os timestamps UTC servem apenas como registro externo; a ordem lógica relevante é dada pelos valores \texttt{lamport}.
 
 \subsection{Experimento 3: eleição de líder Bully}
 \textbf{Configuração.}
@@ -287,6 +331,8 @@ Accepted node2 as coordinator
 
 O comportamento confirma a regra do Bully: o maior ID \emph{ativo} assume a liderança.
 
+\textbf{Análise linha a linha.} (1)~\texttt{Accepted node3 as coordinator} --- estado inicial: maior ID ativo; (2)~\texttt{Leader node3 timed out} --- seguidor detecta ausência de \texttt{HEARTBEAT} após \texttt{LEADER\_TIMEOUT}; (3)~\texttt{Starting election} --- início da eleição em \texttt{node0}/\texttt{node2}; (4)~\texttt{I am the new coordinator (node2)} --- \texttt{node2} não recebeu \texttt{OK} de \texttt{node3} (morto) e torna-se o maior ID ativo; (5)~\texttt{Accepted node2 as coordinator} --- demais nós atualizam o líder conhecido.
+
 \subsection{Experimento 4: testes automatizados}
 \textbf{Procedimento.} Execução de \texttt{uv sync --extra dev} seguida de \texttt{uv run pytest -v}.
 
@@ -309,7 +355,7 @@ Os experimentos realizados --- demonstrações de mutex e eleição, além de 17
 
 Entre as principais dificuldades encontradas estiveram a coordenação de conexões TCP na malha completa (evitar sockets duplicados e tolerar peers mortos no \texttt{broadcast}), o ajuste fino de timeouts no Bully para evitar eleições prematuras na inicialização e a integração de três algoritmos concorrentes sobre o mesmo canal de comunicação.
 
-Como limitações, o sistema assume falhas do tipo \emph{crash-stop} e detecção por timeout, sem tratar partições de rede nem recuperação de mensagens perdidas. Trabalhos futuros poderiam incluir suporte a mais nós, métricas de latência e comparação com outros algoritmos de exclusão mútua ou consenso.
+Como limitações, o sistema assume falhas do tipo \emph{crash-stop} e detecção por timeout, sem tratar partições de rede nem recuperação de mensagens perdidas. Trabalhos futuros poderiam incluir suporte a mais nós, métricas de latência e comparação com outros algoritmos de exclusão mútua ou consenso. A rastreabilidade das fontes consultadas está documentada na Seção~\ref{sec:fontes} e no repositório GitHub.
 
 \section*{Referências}
 \begin{thebibliography}{99}

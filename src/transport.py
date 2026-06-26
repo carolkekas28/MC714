@@ -103,7 +103,8 @@ class MessageTransport:
         )
 
     async def broadcast(self, message: Message) -> None:
-        message.lamport_ts = self.clock.on_send()
+        if message.lamport_ts == 0:
+            message.lamport_ts = self.clock.on_send()
         message.sender = self.config.node_id
         delivered: list[int] = []
         for peer_id in self.peer_ids():

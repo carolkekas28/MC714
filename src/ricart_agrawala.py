@@ -44,16 +44,15 @@ class RicartAgrawala:
             self.requesting = True
             self.replies_received.clear()
             self._enter_event.clear()
+            self.request_ts = self.clock.on_send()
 
         request = Message(
             type=MessageType.REQUEST,
             sender=self.config.node_id,
+            lamport_ts=self.request_ts,
             payload={},
         )
         await self.transport.broadcast(request)
-
-        async with self._lock:
-            self.request_ts = request.lamport_ts
 
         logger.info(
             "REQUEST critical section (Lamport ts=%d), waiting for %d replies",
